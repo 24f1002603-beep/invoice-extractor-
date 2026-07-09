@@ -4,12 +4,14 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from openai import OpenAI
 
-from google import genai
-from google.genai import types
-
-client = genai.Client(
-    api_key=os.environ["GEMINI_API_KEY"]
+client = OpenAI(
+    api_key=os.environ["OPENROUTER_API_KEY"],
+    base_url=os.environ.get(
+        "OPENROUTER_BASE_URL",
+        "https://openrouter.ai/api/v1"
+    ),
 )
 
 app = FastAPI(title="Invoice Extraction API")
@@ -38,26 +40,22 @@ def extract_invoice(req: InvoiceRequest):
     prompt = f"""
 You are an invoice extraction system.
 
-Extract the following fields from the invoice.
+Extract the following fields.
 
 Return ONLY valid JSON.
 
-Always include ALL six keys.
+Always return ALL six keys.
 
-If a field is missing use null.
+Use null if a field is missing.
 
 Rules:
 
-date must be YYYY-MM-DD
+- date must be YYYY-MM-DD
+- amount = subtotal BEFORE tax
+- tax = tax amount ONLY
+- currency must be the 3-letter ISO code
 
-amount = subtotal BEFORE tax
-
-tax = tax amount ONLY
-
-currency must be the 3-letter ISO currency code
-(INR, USD, EUR, GBP, etc.)
-
-JSON format:
+Return EXACTLY this schema:
 
 {{
     "invoice_no": null,
@@ -73,19 +71,36 @@ Invoice:
 {req.invoice_text}
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0,
-            response_mime_type="application/json"
-        )
-    )
-
     try:
-        return json.loads(response.text)
 
-    except Exception:
+        response = client.chat.completions.create(
+            model="google/gemini-2.5-flash",
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+
+        text = response.choices[0].message.content
+
+        data = json.loads(text)
+
+        return {
+            "invoice_no": data.get("invoice_no"),
+            "date": data.get("date"),
+            "vendor": data.get("vendor"),
+            "amount": data.get("amount"),
+            "tax": data.get("tax"),
+            "currency": data.get("currency"),
+        }
+
+    except Exception as e:
+
+        print(e)
 
         return {
             "invoice_no": None,
