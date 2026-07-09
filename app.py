@@ -8,10 +8,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key=os.environ["OPENROUTER_API_KEY"],
-    base_url=os.environ.get(
-        "OPENROUTER_BASE_URL",
-        "https://openrouter.ai/api/v1"
-    ),
+    base_url="https://openrouter.ai/api/v1",
 )
 
 app = FastAPI(title="Invoice Extraction API")
@@ -40,30 +37,32 @@ def extract_invoice(req: InvoiceRequest):
     prompt = f"""
 You are an invoice extraction system.
 
-Extract the following fields.
+Extract the following fields from the invoice.
 
 Return ONLY valid JSON.
 
-Always return ALL six keys.
+Always return ALL SIX keys.
 
-Use null if a field is missing.
+Use null if a field cannot be found.
 
 Rules:
 
-- date must be YYYY-MM-DD
-- amount = subtotal BEFORE tax
-- tax = tax amount ONLY
-- currency must be the 3-letter ISO code
+- invoice_no
+- date (YYYY-MM-DD)
+- vendor
+- amount (subtotal BEFORE tax)
+- tax (tax amount ONLY)
+- currency (3-letter ISO code)
 
-Return EXACTLY this schema:
+Return EXACTLY this JSON format:
 
 {{
-    "invoice_no": null,
-    "date": null,
-    "vendor": null,
-    "amount": null,
-    "tax": null,
-    "currency": null
+  "invoice_no": null,
+  "date": null,
+  "vendor": null,
+  "amount": null,
+  "tax": null,
+  "currency": null
 }}
 
 Invoice:
@@ -74,7 +73,7 @@ Invoice:
     try:
 
         response = client.chat.completions.create(
-            model="google/gemini-2.5-flash",
+            model="openrouter/free",
             temperature=0,
             response_format={"type": "json_object"},
             messages=[
@@ -82,12 +81,12 @@ Invoice:
                     "role": "user",
                     "content": prompt
                 }
-            ]
+            ],
         )
 
-        text = response.choices[0].message.content
+        result = response.choices[0].message.content
 
-        data = json.loads(text)
+        data = json.loads(result)
 
         return {
             "invoice_no": data.get("invoice_no"),
@@ -108,5 +107,5 @@ Invoice:
             "vendor": None,
             "amount": None,
             "tax": None,
-            "currency": None
+            "currency": None,
         }
